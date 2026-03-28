@@ -37,7 +37,7 @@ async function mainBotSend(chatId, text) {
   const r = await fetch(`https://api.telegram.org/bot${MAIN_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
   });
   const j = await r.json();
   if (!j.ok) throw new Error(j.description || 'Telegram error');
@@ -75,8 +75,8 @@ function mainMenu() {
 }
 
 function showMenu(ctx) {
-  return ctx.reply('👋 *USLUGI.UZ — Админ панель*\n\nВыбери действие:', {
-    parse_mode: 'Markdown',
+  return ctx.reply('👋 <b>USLUGI.UZ — Админ панель</b>\n\nВыбери действие:', {
+    parse_mode: 'HTML',
     ...mainMenu()
   });
 }
@@ -92,7 +92,7 @@ function fmtService(d) {
 // ─── КОМАНДЫ ──────────────────────────────────────────────────────────────────
 bot.start(ctx => {
   if (!authedAdmins.has(ctx.from.id)) {
-    return ctx.reply('🔐 *USLUGI.UZ — Админ*\n\nВведите пароль:', { parse_mode: 'Markdown' });
+    return ctx.reply('🔐 <b>USLUGI.UZ — Админ</b>\n\nВведите пароль:', { parse_mode: 'HTML' });
   }
   return showMenu(ctx);
 });
@@ -100,8 +100,8 @@ bot.start(ctx => {
 bot.command('help', ctx => {
   if (!authedAdmins.has(ctx.from.id)) return ctx.reply('🔐 Введите пароль. /start');
   return ctx.reply(
-    `📖 *Справка*\n\n/pending — заявки с кнопками\n/list — одобренные с кнопкой удаления\n/broadcast — рассылка всем\n/cancel — отменить ввод`,
-    { parse_mode: 'Markdown' }
+    `📖 <b>Справка</b>\n\n/pending — заявки с кнопками\n/list — одобренные с кнопкой удаления\n/broadcast — рассылка всем\n/cancel — отменить ввод`,
+    { parse_mode: 'HTML' }
   );
 });
 
@@ -170,9 +170,9 @@ bot.on('text', async (ctx, next) => {
     broadcastText    = ctx.message.text.trim();
     broadcastWaiting = false;
     return ctx.reply(
-      `📋 *Черновик рассылки:*\n\n${broadcastText}`,
+      `📋 <b>Черновик рассылки:</b>\n\n${broadcastText}`,
       {
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
           [Markup.button.callback('📢 Разослать всем', 'broadcast_send')],
           [Markup.button.callback('✏️ Изменить', 'broadcast_edit'), Markup.button.callback('🗑 Отмена', 'broadcast_cancel')]
@@ -187,8 +187,8 @@ bot.on('text', async (ctx, next) => {
 // ─── INLINE КНОПКИ МЕНЮ ───────────────────────────────────────────────────────
 bot.action('main_menu', async ctx => {
   await ctx.answerCbQuery();
-  return ctx.editMessageText('👋 *USLUGI.UZ — Админ панель*\n\nВыбери действие:', {
-    parse_mode: 'Markdown',
+  return ctx.editMessageText('👋 <b>USLUGI.UZ — Админ панель</b>\n\nВыбери действие:', {
+    parse_mode: 'HTML',
     ...mainMenu()
   });
 });
@@ -204,8 +204,8 @@ bot.action('pending_apps', async ctx => {
       ]));
     }
     return ctx.editMessageText(
-      `📋 *Ожидают: ${rows.length}*\n\nОтправь /pending чтобы увидеть их с кнопками`,
-      { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Обновить', 'pending_apps')], [Markup.button.callback('🏠 Главная', 'main_menu')]]) }
+      `📋 <b>Ожидают: ${rows.length}</b>\n\nОтправь /pending чтобы увидеть их с кнопками`,
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Обновить', 'pending_apps')], [Markup.button.callback('🏠 Главная', 'main_menu')]]) }
     );
   } catch (e) { ctx.reply('❌ ' + e.message); }
 });
