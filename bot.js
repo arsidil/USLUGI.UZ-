@@ -308,6 +308,22 @@ bot.on('callback_query', async (ctx, next) => {
 
     if (action === 'approve') {
       await db.update('services', `id=eq.${id}`, { status: 'approved' });
+
+      // Уведомляем специалиста если он запускал основной бот
+      if (d.telegram && MAIN_BOT_TOKEN) {
+        try {
+          const uname = d.telegram.replace(/^@/, '').toLowerCase();
+          const found = await db.select('users', `username=eq.${uname}&select=chat_id&limit=1`);
+          if (found && found.length) {
+            await mainBotSend(found[0].chat_id,
+              `🎉 *Ваша анкета одобрена!*\n\nВы опубликованы в каталоге USLUGI.UZ.\nТеперь клиенты могут найти вас и связаться напрямую 💛`
+            );
+          }
+        } catch (e) {
+          console.warn('Notify specialist error:', e.message);
+        }
+      }
+
       return ctx.editMessageText(
         `✅ *ОДОБРЕНО*\n\n👤 ${d.name}\n🎯 ${d.specialty || '-'}\n📂 ${d.category}\n📞 ${d.phone || '-'}\n✈️ ${d.telegram ? '@' + d.telegram : '-'}`,
         { parse_mode: 'Markdown' }
