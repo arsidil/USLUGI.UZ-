@@ -82,11 +82,11 @@ function showMenu(ctx) {
 }
 
 function fmtService(d) {
-  return `🚨 *НОВАЯ ЗАЯВКА*\n\n👤 *${d.name}*\n📂 ${d.category}` +
-    (d.specialty   ? `\n🎯 *${d.specialty}*`  : '') +
-    (d.phone       ? `\n📞 *${d.phone}*`       : '') +
-    (d.telegram    ? `\n✈️ @${d.telegram}`     : '') +
-    (d.description ? `\n📝 ${d.description}`   : '');
+  return `🚨 НОВАЯ ЗАЯВКА\n\n👤 ${d.name}\n📂 ${d.category}` +
+    (d.specialty   ? `\n🎯 ${d.specialty}`   : '') +
+    (d.phone       ? `\n📞 ${d.phone}`        : '') +
+    (d.telegram    ? `\n✈️ @${d.telegram}`    : '') +
+    (d.description ? `\n📝 ${d.description}`  : '');
 }
 
 // ─── КОМАНДЫ ──────────────────────────────────────────────────────────────────
@@ -110,10 +110,9 @@ bot.command('pending', async ctx => {
   try {
     const rows = await db.select('services', 'status=eq.pending&order=created_at.asc');
     if (!rows || !rows.length) return ctx.reply('✅ Нет ожидающих заявок');
-    await ctx.reply(`📋 *Ожидают: ${rows.length}*`, { parse_mode: 'Markdown' });
+    await ctx.reply(`📋 Ожидают: ${rows.length}`);
     for (const d of rows) {
       await bot.telegram.sendMessage(ADMIN_ID, fmtService(d), {
-        parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([[
           Markup.button.callback('✅ Одобрить', `approve_${d.id}`),
           Markup.button.callback('❌ Отклонить', `reject_${d.id}`)
@@ -128,14 +127,14 @@ bot.command('list', async ctx => {
   try {
     const rows = await db.select('services', 'status=eq.approved&order=created_at.desc');
     if (!rows || !rows.length) return ctx.reply('📭 Нет одобренных анкет');
-    await ctx.reply(`📋 *Одобренных: ${rows.length}*`, { parse_mode: 'Markdown' });
+    await ctx.reply(`📋 Одобренных: ${rows.length}`);
     for (const d of rows) {
       const ph = d.phone    ? `\n📞 ${d.phone}`     : '';
       const tg = d.telegram ? `\n✈️ @${d.telegram}` : '';
       const sp = d.specialty ? ` — ${d.specialty}`  : '';
       await bot.telegram.sendMessage(ADMIN_ID,
-        `👤 *${d.name}*\n📂 ${d.category}${sp}${ph}${tg}`,
-        { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🗑 Удалить анкету', `delete_${d.id}`)]]) }
+        `👤 ${d.name}\n📂 ${d.category}${sp}${ph}${tg}`,
+        { ...Markup.inlineKeyboard([[Markup.button.callback('🗑 Удалить анкету', `delete_${d.id}`)]]) }
       );
     }
   } catch (e) { ctx.reply('❌ Ошибка: ' + e.message); }
@@ -216,9 +215,9 @@ bot.action('approved_apps', async ctx => {
   try {
     const rows = await db.select('services', 'status=eq.approved&order=created_at.desc');
     if (!rows || !rows.length) return ctx.editMessageText('Нет одобренных', Markup.inlineKeyboard([[Markup.button.callback('🏠 Главная', 'main_menu')]]));
-    let text = `✅ *Одобренных: ${rows.length}*\n\n`;
-    rows.forEach(d => { text += `• *${d.name}* — ${d.specialty || d.category}\n`; });
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Главная', 'main_menu')]]) });
+    let text = `✅ Одобренных: ${rows.length}\n\n`;
+    rows.forEach(d => { text += `• ${d.name} — ${d.specialty || d.category}\n`; });
+    return ctx.editMessageText(text, Markup.inlineKeyboard([[Markup.button.callback('🏠 Главная', 'main_menu')]]));
   } catch (e) { ctx.reply('❌ ' + e.message); }
 });
 
@@ -227,9 +226,9 @@ bot.action('rejected_apps', async ctx => {
   try {
     const rows = await db.select('services', 'status=eq.rejected&order=created_at.desc');
     if (!rows || !rows.length) return ctx.editMessageText('Нет отклонённых', Markup.inlineKeyboard([[Markup.button.callback('🏠 Главная', 'main_menu')]]));
-    let text = `❌ *Отклонённых: ${rows.length}*\n\n`;
-    rows.forEach(d => { text += `• *${d.name}* — ${d.specialty || d.category}\n`; });
-    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Главная', 'main_menu')]]) });
+    let text = `❌ Отклонённых: ${rows.length}\n\n`;
+    rows.forEach(d => { text += `• ${d.name} — ${d.specialty || d.category}\n`; });
+    return ctx.editMessageText(text, Markup.inlineKeyboard([[Markup.button.callback('🏠 Главная', 'main_menu')]]));
   } catch (e) { ctx.reply('❌ ' + e.message); }
 });
 
@@ -316,7 +315,7 @@ bot.on('callback_query', async (ctx, next) => {
           const found = await db.select('users', `username=eq.${uname}&select=chat_id&limit=1`);
           if (found && found.length) {
             await mainBotSend(found[0].chat_id,
-              `🎉 *Ваша анкета одобрена!*\n\nВы опубликованы в каталоге USLUGI.UZ.\nТеперь клиенты могут найти вас и связаться напрямую 💛`
+              `🎉 Ваша анкета одобрена!\n\nВы опубликованы в каталоге USLUGI.UZ.\nТеперь клиенты могут найти вас и связаться напрямую 💛`
             );
           }
         } catch (e) {
@@ -325,23 +324,21 @@ bot.on('callback_query', async (ctx, next) => {
       }
 
       return ctx.editMessageText(
-        `✅ *ОДОБРЕНО*\n\n👤 ${d.name}\n🎯 ${d.specialty || '-'}\n📂 ${d.category}\n📞 ${d.phone || '-'}\n✈️ ${d.telegram ? '@' + d.telegram : '-'}`,
-        { parse_mode: 'Markdown' }
+        `✅ ОДОБРЕНО\n\n👤 ${d.name}\n🎯 ${d.specialty || '-'}\n📂 ${d.category}\n📞 ${d.phone || '-'}\n✈️ ${d.telegram ? '@' + d.telegram : '-'}`
       );
     }
 
     if (action === 'reject') {
       await db.update('services', `id=eq.${id}`, { status: 'rejected' });
       return ctx.editMessageText(
-        `❌ *ОТКЛОНЕНО*\n\n👤 ${d.name}\n🎯 ${d.specialty || '-'}\n📂 ${d.category}`,
-        { parse_mode: 'Markdown' }
+        `❌ ОТКЛОНЕНО\n\n👤 ${d.name}\n🎯 ${d.specialty || '-'}\n📂 ${d.category}`
       );
     }
 
     if (action === 'delete') {
       try { await db.delete('reviews', `service_id=eq.${id}`); } catch (_) {}
       await db.delete('services', `id=eq.${id}`);
-      return ctx.editMessageText(`🗑 *Удалено*\n👤 ${d.name}`, { parse_mode: 'Markdown' });
+      return ctx.editMessageText(`🗑 Удалено\n👤 ${d.name}`);
     }
 
   } catch (e) {
@@ -361,7 +358,6 @@ async function pollPending() {
       if (seenIds.has(d.id)) continue;
       seenIds.add(d.id);
       await bot.telegram.sendMessage(ADMIN_ID, fmtService(d), {
-        parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([[
           Markup.button.callback('✅ Одобрить', `approve_${d.id}`),
           Markup.button.callback('❌ Отклонить', `reject_${d.id}`)
