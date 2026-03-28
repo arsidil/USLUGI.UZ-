@@ -1,0 +1,17 @@
+{
+  "name": "uslugi-uz-bot",
+  "version": "1.0.0",
+  "description": "USLUGI.UZ Telegram Bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "telegraf": "^4.12.2",
+    "firebase-admin": "^12.1.0",
+    "dotenv": "^16.3.1"
+  }
+}
