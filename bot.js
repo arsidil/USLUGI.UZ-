@@ -49,17 +49,58 @@ const db = {
   delete: (tbl, f) => sbFetch(`/rest/v1/${tbl}?${f}`, { method: 'DELETE' })
 };
 
+// ─── ЗАГРУЗКА ФОТО НА SUPABASE STORAGE ──────────────────────────────────────
+// Скачивает фото через админ-бот и загружает в Supabase, возвращает публичный URL
+async function uploadBroadcastPhoto(fileId) {
+  // 1. Получаем путь к файлу через API админ-бота
+  const infoRes = await fetch(
+    `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`
+  );
+  const infoJson = await infoRes.json();
+  if (!infoJson.ok) throw new Error('getFile failed: ' + infoJson.description);
+  const filePath = infoJson.result.file_path;
+
+  // 2. Скачиваем файл
+  const fileRes = await fetch(
+    `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`
+  );
+  if (!fileRes.ok) throw new Error('Download failed');
+  const buffer = await fileRes.arrayBuffer();
+
+  // 3. Загружаем в Supabase Storage (бакет broadcast-photos)
+  const ext = filePath.split('.').pop() || 'jpg';
+  const storagePath = `public/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const uploadRes = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/broadcast-photos/${storagePath}`,
+    {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'false'
+      },
+      body: buffer
+    }
+  );
+  if (!uploadRes.ok) {
+    const e = await uploadRes.text();
+    throw new Error('Upload failed: ' + e);
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/broadcast-photos/${storagePath}`;
+}
+
 // ─── ОТПРАВКА В ОСНОВНОЙ БОТ ──────────────────────────────────────────────────
-// photoFileId — file_id из Telegram (работает между ботами, в отличие от temp URL)
-async function mainBotSend(chatId, text, photoFileId = null) {
+// photoUrl — публичный URL (Supabase), работает в любом боте
+async function mainBotSend(chatId, text, photoUrl = null) {
   if (!MAIN_BOT_TOKEN) throw new Error('MAIN_BOT_TOKEN не задан');
 
-  const endpoint = photoFileId
+  const endpoint = photoUrl
     ? `https://api.telegram.org/bot${MAIN_BOT_TOKEN}/sendPhoto`
     : `https://api.telegram.org/bot${MAIN_BOT_TOKEN}/sendMessage`;
   
-  const body = photoFileId
-    ? { chat_id: chatId, photo: photoFileId, caption: text, parse_mode: 'HTML' }
+  const body = photoUrl
+    ? { chat_id: chatId, photo: photoUrl, caption: text, parse_mode: 'HTML' }
     : { chat_id: chatId, text, parse_mode: 'HTML' };
 
   const r = await fetch(endpoint, {
@@ -366,7 +407,6 @@ bot.action('broadcast_send', async ctx => {
   
   let ok = 0, fail = 0;
   const text = broadcastState.text;
-  // file_id работает напрямую — getFileLink не нужен и даёт временный URL
   const photoFileId = broadcastState.photoFileId;
   
   // Сбрасываем состояние перед рассылкой
@@ -375,9 +415,21 @@ bot.action('broadcast_send', async ctx => {
   broadcastState.isAwaitingText = false;
   broadcastState.isAwaitingPhoto = false;
 
+  // Загружаем фото на Supabase один раз — URL работает в любом боте
+  let photoUrl = null;
+  if (photoFileId) {
+    try {
+      await ctx.reply('⏳ Загружаю фото...');
+      photoUrl = await uploadBroadcastPhoto(photoFileId);
+    } catch (e) {
+      console.warn('Photo upload error:', e.message);
+      await ctx.reply('⚠️ Не удалось загрузить фото, рассылка будет без фото.');
+    }
+  }
+
   for (let i = 0; i < users.length; i++) {
     try {
-      await mainBotSend(users[i].chat_id, text, photoFileId);
+      await mainBotSend(users[i].chat_id, text, photoUrl);
       ok++;
     } catch (e) {
       fail++;
