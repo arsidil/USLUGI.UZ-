@@ -50,15 +50,16 @@ const db = {
 };
 
 // ─── ОТПРАВКА В ОСНОВНОЙ БОТ ──────────────────────────────────────────────────
-async function mainBotSend(chatId, text, photoUrl = null) {
+// photoFileId — file_id из Telegram (работает между ботами, в отличие от temp URL)
+async function mainBotSend(chatId, text, photoFileId = null) {
   if (!MAIN_BOT_TOKEN) throw new Error('MAIN_BOT_TOKEN не задан');
 
-  const endpoint = photoUrl 
+  const endpoint = photoFileId
     ? `https://api.telegram.org/bot${MAIN_BOT_TOKEN}/sendPhoto`
     : `https://api.telegram.org/bot${MAIN_BOT_TOKEN}/sendMessage`;
   
-  const body = photoUrl
-    ? { chat_id: chatId, photo: photoUrl, caption: text, parse_mode: 'HTML' }
+  const body = photoFileId
+    ? { chat_id: chatId, photo: photoFileId, caption: text, parse_mode: 'HTML' }
     : { chat_id: chatId, text, parse_mode: 'HTML' };
 
   const r = await fetch(endpoint, {
@@ -365,18 +366,8 @@ bot.action('broadcast_send', async ctx => {
   
   let ok = 0, fail = 0;
   const text = broadcastState.text;
+  // file_id работает напрямую — getFileLink не нужен и даёт временный URL
   const photoFileId = broadcastState.photoFileId;
-
-  // ✅ Если есть фото — получаем постоянную ссылку через getFileLink один раз
-  let photoUrl = null;
-  if (photoFileId) {
-    try {
-      const fileLink = await bot.telegram.getFileLink(photoFileId);
-      photoUrl = fileLink.href;
-    } catch (e) {
-      console.warn('getFileLink error:', e.message);
-    }
-  }
   
   // Сбрасываем состояние перед рассылкой
   broadcastState.text = null;
@@ -386,7 +377,7 @@ bot.action('broadcast_send', async ctx => {
 
   for (let i = 0; i < users.length; i++) {
     try {
-      await mainBotSend(users[i].chat_id, text, photoUrl);
+      await mainBotSend(users[i].chat_id, text, photoFileId);
       ok++;
     } catch (e) {
       fail++;
