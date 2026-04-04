@@ -532,7 +532,9 @@ bot.on('callback_query', async (ctx, next) => {
     const d = rows[0];
 
     if (action === 'approve') {
-      const verified = !!d.document_url;
+      const verified = d.category === 'Проф'
+        ? !!d.document_url && !!d.diploma_url
+        : !!d.document_url;
       await db.update('services', `id=eq.${id}`, { 
         status: 'approved', 
         verified 
