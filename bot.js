@@ -127,6 +127,20 @@ const broadcastState = {
 
 const ACTION_RE = /^(approve|reject|delete)_(.+)$/;
 
+// ─── SAFE EDIT HELPER ─────────────────────────────────────────────────────────
+// Telegram не даёт editMessageText на фото-сообщениях — нужен editMessageCaption
+async function safeEditOrReply(ctx, text) {
+  try {
+    await ctx.editMessageText(text);
+  } catch {
+    try {
+      await ctx.editMessageCaption(text);
+    } catch {
+      await ctx.reply(text).catch(() => {});
+    }
+  }
+}
+
 // ─── MIDDLEWARE: КОНТРОЛЬ ДОСТУПА ──────────────────────────────────────────────
 bot.use(async (ctx, next) => {
   if (!ctx.from || ctx.from.id !== ADMIN_ID) {
@@ -177,11 +191,20 @@ async function sendServiceToAdmin(d) {
   try {
     // Основное сообщение — с фото профиля если есть
     if (d.photo_url) {
-      await bot.telegram.sendPhoto(ADMIN_ID, d.photo_url, {
-        caption: text,
-        parse_mode: 'HTML',
-        ...keyboard
-      });
+      try {
+        await bot.telegram.sendPhoto(ADMIN_ID, d.photo_url, {
+          caption: text,
+          parse_mode: 'HTML',
+          ...keyboard
+        });
+      } catch (photoErr) {
+        // 413 или слишком большой файл — шлём текстом со ссылкой
+        console.warn('sendPhoto failed, fallback to text:', photoErr.message);
+        await bot.telegram.sendMessage(ADMIN_ID,
+          text + `\n\n🖼 <a href="${d.photo_url}">Фото профиля</a>`,
+          { parse_mode: 'HTML', ...keyboard }
+        );
+      }
     } else {
       await bot.telegram.sendMessage(ADMIN_ID, text, {
         parse_mode: 'HTML',
@@ -468,7 +491,7 @@ bot.action('broadcast_cancel', async ctx => {
   broadcastState.photoFileId = null;
   broadcastState.isAwaitingText = false;
   broadcastState.isAwaitingPhoto = false;
-  return ctx.editMessageText('🗑 Рассылка отменена.');
+  try { await ctx.editMessageText('🗑 Рассылка отменена.'); } catch { await ctx.reply('🗑 Рассылка отменена.').catch(() => {}); }
 });
 
 // ─── INLINE-КНОПКИ: МЕНЮ ──────────────────────────────────────────────────────
@@ -527,7 +550,7 @@ bot.on('callback_query', async (ctx, next) => {
   try {
     const rows = await db.select('services', `id=eq.${id}`);
     if (!rows || !rows.length) {
-      return ctx.editMessageText('⚠️ Запись удалена');
+      return safeEditOrReply(ctx, '⚠️ Запись удалена');
     }
     const d = rows[0];
 
@@ -558,14 +581,14 @@ bot.on('callback_query', async (ctx, next) => {
       }
 
       const verMark = verified ? ' ✅' : '';
-      return ctx.editMessageText(
-        `✅ ОДОБРЕНО${verMark}\n\n👤 ${d.name}\n🎯 ${d.specialty || '—'}\n📂 ${d.category}`
-      );
+      await safeEditOrReply(ctx, `✅ ОДОБРЕНО${verMark}\n\n👤 ${d.name}\n🎯 ${d.specialty || '—'}\n📂 ${d.category}`);
+      return;
     }
 
     if (action === 'reject') {
       await db.update('services', `id=eq.${id}`, { status: 'rejected' });
-      return ctx.editMessageText(`❌ ОТКЛОНЕНО\n👤 ${d.name}`);
+      await safeEditOrReply(ctx, `❌ ОТКЛОНЕНО\n👤 ${d.name}`);
+      return;
     }
 
     if (action === 'delete') {
@@ -573,7 +596,8 @@ bot.on('callback_query', async (ctx, next) => {
         await db.delete('reviews', `service_id=eq.${id}`); 
       } catch {}
       await db.delete('services', `id=eq.${id}`);
-      return ctx.editMessageText(`🗑 Удалено\n👤 ${d.name}`);
+      await safeEditOrReply(ctx, `🗑 Удалено\n👤 ${d.name}`);
+      return;
     }
 
   } catch (e) {
