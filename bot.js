@@ -127,20 +127,6 @@ const broadcastState = {
 
 const ACTION_RE = /^(approve|reject|delete)_(.+)$/;
 
-// ─── SAFE EDIT HELPER ─────────────────────────────────────────────────────────
-// Telegram не даёт editMessageText на фото-сообщениях — нужен editMessageCaption
-async function safeEditOrReply(ctx, text) {
-  try {
-    await ctx.editMessageText(text);
-  } catch {
-    try {
-      await ctx.editMessageCaption(text);
-    } catch {
-      await ctx.reply(text).catch(() => {});
-    }
-  }
-}
-
 // ─── MIDDLEWARE: КОНТРОЛЬ ДОСТУПА ──────────────────────────────────────────────
 bot.use(async (ctx, next) => {
   if (!ctx.from || ctx.from.id !== ADMIN_ID) {
@@ -182,55 +168,26 @@ function fmtService(d) {
 
 // ─── ОТПРАВКА ЗАЯВКИ АДМИНИСТРАТОРУ ───────────────────────────────────────────
 async function sendServiceToAdmin(d) {
+  // ✅ Только текст + ссылки — никаких скачиваний из Storage.
+  // Именно sendPhoto/sendDocument по Storage URL вызывали 235 GB egress.
   const text = fmtService(d);
   const keyboard = Markup.inlineKeyboard([[
     Markup.button.callback('✅ Одобрить', `approve_${d.id}`),
     Markup.button.callback('❌ Отклонить', `reject_${d.id}`)
   ]]);
 
-  try {
-    // Основное сообщение — с фото профиля если есть
-    if (d.photo_url) {
-      try {
-        await bot.telegram.sendPhoto(ADMIN_ID, d.photo_url, {
-          caption: text,
-          parse_mode: 'HTML',
-          ...keyboard
-        });
-      } catch (photoErr) {
-        // 413 или слишком большой файл — шлём текстом со ссылкой
-        console.warn('sendPhoto failed, fallback to text:', photoErr.message);
-        await bot.telegram.sendMessage(ADMIN_ID,
-          text + `\n\n🖼 <a href="${d.photo_url}">Фото профиля</a>`,
-          { parse_mode: 'HTML', ...keyboard }
-        );
-      }
-    } else {
-      await bot.telegram.sendMessage(ADMIN_ID, text, {
-        parse_mode: 'HTML',
-        ...keyboard
-      });
-    }
+  const links = [];
+  if (d.photo_url)    links.push(`🖼 <a href="${d.photo_url}">Фото профиля</a>`);
+  if (d.document_url) links.push(`📄 <a href="${d.document_url}">Документ (паспорт)</a>`);
+  if (d.diploma_url)  links.push(`🎓 <a href="${d.diploma_url}">Диплом</a>`);
+  const linksText = links.length ? '\n\n' + links.join('  |  ') : '';
 
-    // ✅ Документ подтверждения (отдельным сообщением)
-    if (d.document_url) {
-      // Сначала пробуем как документ (PDF, doc, etc.)
-      try {
-        await bot.telegram.sendDocument(ADMIN_ID, d.document_url, {
-          caption: '📄 Документ подтверждения квалификации'
-        });
-      } catch {
-        // Если не документ — пробуем как фото (jpg, png)
-        try {
-          await bot.telegram.sendPhoto(ADMIN_ID, d.document_url, {
-            caption: '📸 Документ подтверждения (фото)'
-          });
-        } catch {
-          // Последний фолбек — просто ссылка
-          await bot.telegram.sendMessage(ADMIN_ID, `📄 Документ: ${d.document_url}`);
-        }
-      }
-    }
+  try {
+    await bot.telegram.sendMessage(ADMIN_ID, text + linksText, {
+      parse_mode: 'HTML',
+      ...keyboard,
+      link_preview_options: { is_disabled: true }
+    });
   } catch (e) {
     console.error('sendServiceToAdmin error:', e.message);
   }
@@ -491,7 +448,7 @@ bot.action('broadcast_cancel', async ctx => {
   broadcastState.photoFileId = null;
   broadcastState.isAwaitingText = false;
   broadcastState.isAwaitingPhoto = false;
-  try { await ctx.editMessageText('🗑 Рассылка отменена.'); } catch { await ctx.reply('🗑 Рассылка отменена.').catch(() => {}); }
+  return ctx.editMessageText('🗑 Рассылка отменена.');
 });
 
 // ─── INLINE-КНОПКИ: МЕНЮ ──────────────────────────────────────────────────────
@@ -550,7 +507,7 @@ bot.on('callback_query', async (ctx, next) => {
   try {
     const rows = await db.select('services', `id=eq.${id}`);
     if (!rows || !rows.length) {
-      return safeEditOrReply(ctx, '⚠️ Запись удалена');
+      return ctx.editMessageText('⚠️ Запись удалена');
     }
     const d = rows[0];
 
@@ -581,14 +538,14 @@ bot.on('callback_query', async (ctx, next) => {
       }
 
       const verMark = verified ? ' ✅' : '';
-      await safeEditOrReply(ctx, `✅ ОДОБРЕНО${verMark}\n\n👤 ${d.name}\n🎯 ${d.specialty || '—'}\n📂 ${d.category}`);
-      return;
+      return ctx.editMessageText(
+        `✅ ОДОБРЕНО${verMark}\n\n👤 ${d.name}\n🎯 ${d.specialty || '—'}\n📂 ${d.category}`
+      );
     }
 
     if (action === 'reject') {
       await db.update('services', `id=eq.${id}`, { status: 'rejected' });
-      await safeEditOrReply(ctx, `❌ ОТКЛОНЕНО\n👤 ${d.name}`);
-      return;
+      return ctx.editMessageText(`❌ ОТКЛОНЕНО\n👤 ${d.name}`);
     }
 
     if (action === 'delete') {
@@ -596,8 +553,7 @@ bot.on('callback_query', async (ctx, next) => {
         await db.delete('reviews', `service_id=eq.${id}`); 
       } catch {}
       await db.delete('services', `id=eq.${id}`);
-      await safeEditOrReply(ctx, `🗑 Удалено\n👤 ${d.name}`);
-      return;
+      return ctx.editMessageText(`🗑 Удалено\n👤 ${d.name}`);
     }
 
   } catch (e) {
@@ -629,9 +585,9 @@ db.select('services', 'status=eq.pending')
   .then(rows => {
     if (rows) rows.forEach(r => seenIds.add(r.id));
     console.log(`📊 Pending на запуск: ${seenIds.size}`);
-    setInterval(pollPending, 10_000);
+    setInterval(pollPending, 60_000);
   })
-  .catch(() => setInterval(pollPending, 10_000));
+  .catch(() => setInterval(pollPending, 60_000));
 
 // ─── СТАРТ ────────────────────────────────────────────────────────────────────
 bot.launch();
